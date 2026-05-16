@@ -63,9 +63,14 @@ export default function Page() {
   const [modal, setModal] = useState<Modal>(null);
   const [tab, setTab] = useState<Tab>("home");
   const [dark, setDark] = useState(false);
+  const [isRecovery, setIsRecovery] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    if (params.get("type") === "recovery") {
+      setIsRecovery(true);
+    }
     async function boot() {
       try {
         if (hasSupabaseConfig() && supabase) {
@@ -97,6 +102,9 @@ export default function Page() {
       }
     }
     const authSubscription = supabase?.auth.onAuthStateChange((_event, session) => {
+      if (_event === "PASSWORD_RECOVERY") {
+        setIsRecovery(true);
+      }
       const sessionUser = session?.user ?? null;
       setUser(sessionUser);
       if (!sessionUser) {
@@ -155,6 +163,19 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...`}
 
   if (loading) {
     return <main className="min-h-screen px-5 py-8 text-ink dark:text-stone-50">正在打开照护本...</main>;
+  }
+
+  if (isRecovery) {
+    return (
+      <ResetPasswordScreen
+        error={error}
+        onError={setError}
+        onDone={() => {
+          setIsRecovery(false);
+          setError("");
+        }}
+      />
+    );
   }
 
   if (!user) {
@@ -436,11 +457,13 @@ function AuthScreen({ error, onError }: { error: string; onError: (message: stri
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
 
   async function submit() {
     if (!supabase) return;
     setBusy(true);
     onError("");
+    setNotice("");
     try {
       const result =
         mode === "signup"
@@ -458,6 +481,24 @@ function AuthScreen({ error, onError }: { error: string; onError: (message: stri
       if (!result.data.session) {
         onError("已发送确认邮件。请先完成邮箱确认，再回到这里登录。");
       }
+    } catch (err) {
+      onError(messageFromError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendRecovery() {
+    if (!supabase || !email) return;
+    setBusy(true);
+    onError("");
+    setNotice("");
+    try {
+      const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/`
+      });
+      if (recoveryError) throw recoveryError;
+      setNotice("已发送密码重置邮件，请去邮箱打开链接。");
     } catch (err) {
       onError(messageFromError(err));
     } finally {
@@ -487,9 +528,66 @@ function AuthScreen({ error, onError }: { error: string; onError: (message: stri
         <Label text="密码">
           <input className="tap w-full bg-white dark:bg-white/10" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 6 位" />
         </Label>
+        {notice && <p className="rounded-[8px] bg-mint p-3 text-sm text-ink dark:bg-sage/40 dark:text-white">{notice}</p>}
         {error && <p className="rounded-[8px] bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-100">{error}</p>}
         <button className="tap w-full bg-ink text-white dark:bg-mint dark:text-ink" disabled={busy || !email || !password} onClick={submit}>
           {busy ? "处理中..." : mode === "signup" ? "注册并继续" : "登录"}
+        </button>
+        {mode === "login" && (
+          <button className="tap w-full bg-white text-stone-700 dark:bg-white/10 dark:text-stone-100" disabled={busy || !email} onClick={sendRecovery}>
+            忘记密码，发送重置邮件
+          </button>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function ResetPasswordScreen({ error, onError, onDone }: { error: string; onError: (message: string) => void; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!supabase) return;
+    onError("");
+    if (password.length < 6) {
+      onError("密码至少 6 位。");
+      return;
+    }
+    if (password !== confirm) {
+      onError("两次输入的密码不一致。");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      await supabase.auth.signOut();
+      onDone();
+    } catch (err) {
+      onError(messageFromError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto min-h-screen max-w-md px-4 py-8 text-ink dark:text-stone-50">
+      <section className="panel space-y-4 p-5">
+        <div>
+          <p className="text-sm text-stone-600 dark:text-stone-300">宝宝照护本</p>
+          <h1 className="text-2xl font-bold">设置新密码</h1>
+        </div>
+        <Label text="新密码">
+          <input className="tap w-full bg-white dark:bg-white/10" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 6 位" />
+        </Label>
+        <Label text="再次输入">
+          <input className="tap w-full bg-white dark:bg-white/10" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} placeholder="再输入一次" />
+        </Label>
+        {error && <p className="rounded-[8px] bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-100">{error}</p>}
+        <button className="tap w-full bg-ink text-white dark:bg-mint dark:text-ink" disabled={busy || !password || !confirm} onClick={submit}>
+          {busy ? "处理中..." : "保存新密码"}
         </button>
       </section>
     </main>
