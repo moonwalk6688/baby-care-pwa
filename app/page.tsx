@@ -365,7 +365,18 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...`}
 
       {tab === "timeline" && <Timeline events={events} onDelete={softDelete} />}
       {tab === "summary" && <Summary stats={stats} today={today} />}
-      {tab === "family" && <Family state={state} commit={commit} />}
+      {tab === "family" && (
+        <Family
+          state={state}
+          commit={commit}
+          onSignOut={async () => {
+            await supabase?.auth.signOut();
+            setState(null);
+            setUser(null);
+            setTab("home");
+          }}
+        />
+      )}
 
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200/80 bg-white/92 px-3 pb-[env(safe-area-inset-bottom)] pt-2 backdrop-blur dark:border-white/10 dark:bg-[#17201d]/92">
         <div className="mx-auto grid max-w-md grid-cols-4 gap-2">
@@ -914,7 +925,7 @@ function Summary({ stats, today }: { stats: ReturnType<typeof getStats>; today: 
   );
 }
 
-function Family({ state, commit }: { state: AppState; commit: (state: AppState) => void }) {
+function Family({ state, commit, onSignOut }: { state: AppState; commit: (state: AppState) => void; onSignOut: () => Promise<void> }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<MemberRole>("其他");
   return (
@@ -939,6 +950,9 @@ function Family({ state, commit }: { state: AppState; commit: (state: AppState) 
           添加成员
         </button>
       </div>
+      <button className="tap w-full border border-stone-200 bg-white text-stone-700 dark:border-white/10 dark:bg-white/10 dark:text-stone-100" onClick={onSignOut}>
+        退出登录
+      </button>
     </section>
   );
 }
