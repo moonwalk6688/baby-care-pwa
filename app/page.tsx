@@ -69,12 +69,12 @@ export default function Page() {
     async function boot() {
       try {
         if (hasSupabaseConfig() && supabase) {
-          const { data } = await supabase.auth.getSession();
+          const { data } = await withTimeout(supabase.auth.getSession(), 8000);
           const sessionUser = data.session?.user ?? null;
           if (!alive) return;
           setUser(sessionUser);
           if (sessionUser) {
-            setState(await loadCloudState(sessionUser));
+            setState(await withTimeout(loadCloudState(sessionUser), 8000));
           }
         } else {
           setState(loadState());
@@ -87,7 +87,13 @@ export default function Page() {
     }
     boot();
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      if (process.env.NODE_ENV === "production") {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          registrations.forEach((registration) => registration.unregister());
+        }).catch(() => undefined);
+      } else {
+        navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      }
     }
     const authSubscription = supabase?.auth.onAuthStateChange(async (_event, session) => {
       const sessionUser = session?.user ?? null;
@@ -99,7 +105,7 @@ export default function Page() {
       }
       setLoading(true);
       try {
-        setState(await loadCloudState(sessionUser));
+        setState(await withTimeout(loadCloudState(sessionUser), 8000));
       } catch (err) {
         setError(messageFromError(err));
       } finally {
@@ -563,6 +569,18 @@ function messageFromError(err: unknown) {
   if (typeof err === "string") return err;
   if (err && typeof err === "object" && "message" in err && typeof err.message === "string") return err.message;
   return "操作失败，请稍后重试。";
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("连接云端超时，请刷新或稍后重试。")), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function getStats(events: CareEvent[], today: CareEvent[]) {
