@@ -69,12 +69,13 @@ export default function Page() {
     async function boot() {
       try {
         if (hasSupabaseConfig() && supabase) {
-          const { data } = await withTimeout(supabase.auth.getSession(), 8000);
+          const { data } = await withTimeout(supabase.auth.getSession(), 15000);
           const sessionUser = data.session?.user ?? null;
           if (!alive) return;
           setUser(sessionUser);
           if (sessionUser) {
-            setState(await withTimeout(loadCloudState(sessionUser), 8000));
+            setState(await withTimeout(loadCloudState(sessionUser), 15000));
+            setError("");
           }
         } else {
           setState(loadState());
@@ -95,7 +96,7 @@ export default function Page() {
         navigator.serviceWorker.register("/sw.js").catch(() => undefined);
       }
     }
-    const authSubscription = supabase?.auth.onAuthStateChange(async (_event, session) => {
+    const authSubscription = supabase?.auth.onAuthStateChange((_event, session) => {
       const sessionUser = session?.user ?? null;
       setUser(sessionUser);
       if (!sessionUser) {
@@ -104,13 +105,16 @@ export default function Page() {
         return;
       }
       setLoading(true);
-      try {
-        setState(await withTimeout(loadCloudState(sessionUser), 8000));
-      } catch (err) {
-        setError(messageFromError(err));
-      } finally {
-        setLoading(false);
-      }
+      window.setTimeout(async () => {
+        try {
+          setState(await withTimeout(loadCloudState(sessionUser), 15000));
+          setError("");
+        } catch (err) {
+          setError(messageFromError(err));
+        } finally {
+          setLoading(false);
+        }
+      }, 0);
     });
     return () => {
       alive = false;
