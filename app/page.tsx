@@ -94,6 +94,7 @@ export default function Page() {
       setUser(sessionUser);
       if (!sessionUser) {
         setState(null);
+        setLoading(false);
         return;
       }
       setLoading(true);
